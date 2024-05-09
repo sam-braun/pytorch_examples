@@ -20,6 +20,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset
+from torchinfo import summary
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -193,6 +194,8 @@ def main_worker(gpu, ngpus_per_node, args):
         device = torch.device("cpu")
     # define loss function (criterion), optimizer, and learning rate scheduler
     criterion = nn.CrossEntropyLoss().to(device)
+
+    print(summary(model, input_size=(1, 3, 224, 224)))
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
