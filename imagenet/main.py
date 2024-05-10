@@ -304,6 +304,8 @@ def main_worker(gpu, ngpus_per_node, args):
             }, is_best)
 
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
 def train(train_loader, model, criterion, optimizer, epoch, device, args):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
@@ -323,24 +325,24 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        # move data to the same device as model
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
 
-        # compute output
-        output = model(images)
-        loss = criterion(output, target)
+        # Start the profiler with the context manager
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+            with record_function("model_inference"):
+                output = model(images)
+                loss = criterion(output, target)
 
-        # measure accuracy and record loss
+            with record_function("backpropagation"):
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), images.size(0))
         top1.update(acc1[0], images.size(0))
         top5.update(acc5[0], images.size(0))
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -348,6 +350,11 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
 
         if i % args.print_freq == 0:
             progress.display(i + 1)
+
+    # Print the profiling results at the end of the epoch
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+
+
 
 
 def validate(val_loader, model, criterion, args):
