@@ -304,7 +304,6 @@ def main_worker(gpu, ngpus_per_node, args):
             }, is_best)
 
 
-from torch.profiler import profile, record_function, ProfilerActivity
 
 def train(train_loader, model, criterion, optimizer, epoch, device, args):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -317,19 +316,22 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         [batch_time, data_time, losses, top1, top5],
         prefix="Epoch: [{}]".format(epoch))
 
-    # switch to train mode
+    # Switch to train mode
     model.train()
 
     end = time.time()
     for i, (images, target) in enumerate(train_loader):
-        # measure data loading time
+        # Measure data loading time
         data_time.update(time.time() - end)
 
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
 
         # Start the profiler with the context manager
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                     record_shapes=True,
+                     profile_memory=True,  # This flags enables memory profiling
+                     with_stack=True) as prof:
             with record_function("model_inference"):
                 output = model(images)
                 loss = criterion(output, target)
@@ -339,21 +341,24 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
                 loss.backward()
                 optimizer.step()
 
+        # Measure accuracy and record loss
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), images.size(0))
         top1.update(acc1[0], images.size(0))
         top5.update(acc5[0], images.size(0))
 
-        # measure elapsed time
+        # Measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
         if i % args.print_freq == 0:
             progress.display(i + 1)
 
-    # Print the profiling results at the end of the epoch
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+        # Print the profiling results at the end of the batch
+        print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
 
+    # Optionally, you could print a summary for the whole epoch outside the loop
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
 
 
 
